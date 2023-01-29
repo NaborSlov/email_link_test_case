@@ -1,0 +1,71 @@
+version: "3.9"
+services:
+  web:
+    build:
+      context: .
+    depends_on:
+      pg:
+        condition: service_healthy
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    command: >
+      bash -c "./manage.py migrate &&
+      ./manage.py runserver 0.0.0.0:8000"
+
+
+  beat:
+    restart: always
+    build:
+      context: .
+    command: celery -A serve_mail beat -l info -S django
+    env_file:
+      - .env
+    depends_on:
+      web:
+        condition: service_started
+      pg:
+        condition: service_started
+
+  worker:
+    restart: always
+    build:
+      context: .
+    command: celery -A serve_mail worker --loglevel=info
+    env_file:
+      - .env
+    depends_on:
+      web:
+        condition: service_started
+      pg:
+        condition: service_started
+
+
+  pg:
+    image: postgres:latest
+    environment:
+      POSTGRES_PASSWORD: $PASSWORD_DB
+      POSTGRES_USER: $USER_DB
+      POSTGRES_DB: $NAME_DB
+    env_file:
+      - .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $USER_DB -d $NAME_DB" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:latest
+    restart: always
+    ports:
+      - "6379:6379"
+
+
+volumes:
+  postgres_data:
